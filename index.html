@@ -1,60 +1,23 @@
-<?php
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $userMessage = $_POST['message'] ?? '';
-    $apiKey = 'AIzaSyDxYqHU2fiBu9OvA8Hw9y3NlV1gcahrH-o'; // Ganti dengan API KEY kamu dari Google AI
-
-    $postData = [
-        'contents' => [
-            [
-                'parts' => [
-                    ['text' => $userMessage]
-                ]
-            ]
-        ]
-    ];
-
-    $ch = curl_init("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=$apiKey");
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($postData));
-
-    $response = curl_exec($ch);
-    $error = curl_error($ch);
-    curl_close($ch);
-
-    if ($error) {
-        echo json_encode(['reply' => 'Error: ' . $error]);
-    } else {
-        $responseData = json_decode($response, true);
-        $reply = $responseData['candidates'][0]['content']['parts'][0]['text'] ?? 'Tidak ada balasan.';
-        echo json_encode(['reply' => $reply]);
-    }
-    exit;
-}
-?>
-
 <!DOCTYPE html>
 <html lang="en">
 
 <head>
-    <meta charset="UTF-8">
-    <title>AI Chat (Gemini)</title>
+    <meta charset="UTF-8" />
+    <title>AI Chat (Gemini + Referensi)</title>
     <script src="https://cdn.tailwindcss.com"></script>
 </head>
 
 <body class="bg-gray-100 min-h-screen flex flex-col items-center p-4">
-    <div class="w-full max-w-xl bg-white rounded-lg shadow-md p-4 flex flex-col h-[90vh]">
-        <h1 class="text-2xl font-bold mb-4 text-center">AI Chat (Gemini)</h1>
+    <div class="w-full max-w-xl bg-white rounded-lg shadow-lg p-4 flex flex-col h-[90vh]">
+        <h1 class="text-2xl font-bold mb-4 text-center text-blue-700">AI Chat with Referensi Jurnal</h1>
 
-        <div id="chat" class="flex-1 overflow-y-auto space-y-2 mb-4 p-2 border rounded bg-gray-50">
-            <!-- Chat messages here -->
-        </div>
+        <div id="chat" class="flex-1 overflow-y-auto space-y-2 mb-4 p-2 border rounded bg-gray-50"></div>
 
         <form id="chat-form" class="flex space-x-2">
-            <input id="user-input" name="message" type="text" placeholder="Tulis pesan..."
+            <input id="user-input" name="message" type="text" placeholder="Tulis pertanyaan..."
                 class="flex-1 p-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500" />
             <button type="submit"
-                class="bg-blue-500 text-white px-4 py-2 rounded hover:bg-blue-600">Kirim</button>
+                class="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition">Kirim</button>
         </form>
     </div>
 
@@ -75,7 +38,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             const loadingEl = chat.lastChild;
 
             try {
-                const res = await fetch('', {
+                const res = await fetch('/api/chat.php', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/x-www-form-urlencoded'
@@ -84,6 +47,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         message: userMessage
                     })
                 });
+
                 const data = await res.json();
                 loadingEl.remove();
                 appendMessage('assistant', data.reply || '[Kosong]');
@@ -96,60 +60,61 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         function appendMessage(role, text) {
             const div = document.createElement('div');
             div.className = `p-2 rounded whitespace-pre-wrap ${
-                role === 'user' ? 'bg-blue-100 self-end text-right' : 'bg-gray-200 self-start text-left'
-            }`;
-            if (role === 'assistant') {
-                div.innerHTML = formatTextToHTML(text);
-            } else {
-                div.textContent = text;
-            }
+        role === 'user' ? 'bg-blue-100 self-end text-right' : 'bg-gray-200 self-start text-left'
+      }`;
+            div.innerHTML = role === 'assistant' ? formatTextToHTML(text) : text;
             chat.appendChild(div);
             chat.scrollTop = chat.scrollHeight;
         }
 
         function formatTextToHTML(text) {
+            const urlRegex = /(https?:\/\/[^\s]+)/g;
+
+            text = text.replace(/\*\*(.*?)\*\*/g, '$1');
+            text = text.replace(/\[(.*?)\]\((.*?)\)/g, '$1 ($2)');
+
             const lines = text.split('\n');
             let html = '';
-            let inOl = false;
-            let inUl = false;
+            let entry = [];
+            let numbering = 1;
+
+            const flushEntry = () => {
+                if (entry.length === 0) return;
+
+                html += `<div class="border-t border-gray-300 pt-4 mt-4">`;
+                const title = entry[0];
+                html += `<p class="font-bold text-lg mb-2">${numbering++}. ${title}</p>`;
+                html += `<ul class="list-disc list-inside space-y-1 text-sm text-gray-800">`;
+
+                for (let i = 1; i < entry.length; i++) {
+                    const line = entry[i].trim();
+                    if (line.match(urlRegex)) {
+                        html += `</ul><p class="mt-2"><a href="${line}" target="_blank" class="text-blue-600 underline break-all">${line}</a></p><ul>`;
+                    } else if (line.length > 0) {
+                        html += `<li>${line}</li>`;
+                    }
+                }
+
+                html += `</ul></div>`;
+                entry = [];
+            };
 
             for (let line of lines) {
                 line = line.trim();
-
-                // Ordered list
-                if (/^\d+\./.test(line)) {
-                    if (!inOl) {
-                        html += '<ol class="list-decimal ml-5">';
-                        inOl = true;
-                    }
-                    html += `<li>${line.replace(/^\d+\.\s*/, '')}</li>`;
-                }
-                // Unordered list
-                else if (/^[-*]\s+/.test(line)) {
-                    if (!inUl) {
-                        html += '<ul class="list-disc ml-5">';
-                        inUl = true;
-                    }
-                    html += `<li>${line.replace(/^[-*]\s+/, '')}</li>`;
-                }
-                // Paragraph
-                else {
-                    if (inOl) {
-                        html += '</ol>';
-                        inOl = false;
-                    }
-                    if (inUl) {
-                        html += '</ul>';
-                        inUl = false;
-                    }
-                    if (line) {
-                        html += `<p class="mb-2">${line}</p>`;
+                if (/^\d+\.\s+/.test(line)) {
+                    flushEntry();
+                    entry.push(line.replace(/^\d+\.\s+/, ''));
+                } else if (line) {
+                    if (line.match(urlRegex)) {
+                        const links = line.match(urlRegex);
+                        links.forEach(link => entry.push(link));
+                    } else {
+                        entry.push(line);
                     }
                 }
             }
 
-            if (inOl) html += '</ol>';
-            if (inUl) html += '</ul>';
+            flushEntry();
             return html;
         }
     </script>

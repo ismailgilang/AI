@@ -1,0 +1,8 @@
+{
+    "functions": {
+      "api/chat.php": {
+        "runtime": "php"
+      }
+    }
+  }
+  
